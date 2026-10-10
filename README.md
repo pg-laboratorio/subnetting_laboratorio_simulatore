@@ -1,8 +1,8 @@
-# Simulatore di Subnetting IPv4
+# Subnetting Simulatore
 
 Strumento interattivo per vedere gli indirizzi IPv4 bit per bit ed esercitarsi su **analisi IPv4** e **subnetting** con indirizzi sempre diversi. Gira interamente nel browser: non serve installare nulla.
 
-👉 **[Apri il simulatore](https://pg-laboratorio.github.io/subnetting_laboratorio_simulatore/)**
+👉 **[Apri Subnetting Simulatore](https://pg-laboratorio.github.io/subnetting_laboratorio_simulatore/)**
 
 È il compagno pratico del repository **[subnetting_laboratorio_esercizi](https://github.com/pg-laboratorio/subnetting_laboratorio_esercizi)**: lì trovi regole, formule ed esercizi svolti, qui puoi allenarti e verificare le tue risposte.
 
