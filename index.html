@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualizzatore bit di rete</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: una colonna stretta da "banco di laboratorio" con tre schede — visualizzatore, esercizio di analisi, esercizio di subnetting */
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --fg: #16202b;
+  --muted: #5d6b7a;
+  --line: #d8dee5;
+  --net: #0d6e8a;      /* bit di rete, accento */
+  --net-soft: #dceef3;
+  --host: #b5560f;     /* bit di host */
+  --host-soft: #f8e7d8;
+  --on-accent: #ffffff;
+  --ok: #1e7a3c;
+  --ok-soft: #e3f3e8;
+  --err: #b42318;
+  --err-soft: #fbe6e4;
+  --font-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-bit: "Martian Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151b; --panel: #161e26; --fg: #e4eaf0; --muted: #91a0ae; --line: #2a3541;
+    --net: #4fc1de; --net-soft: #12313b; --host: #f0a060; --host-soft: #3a2616; --on-accent: #0f151b;
+    --ok: #6fd28f; --ok-soft: #14301d; --err: #ff8a80; --err-soft: #3a1714;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151b; --panel: #161e26; --fg: #e4eaf0; --muted: #91a0ae; --line: #2a3541;
+  --net: #4fc1de; --net-soft: #12313b; --host: #f0a060; --host-soft: #3a2616; --on-accent: #0f151b;
+  --ok: #6fd28f; --ok-soft: #14301d; --err: #ff8a80; --err-soft: #3a1714;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-inline: 16px; padding-block: 28px 48px;
+}
+.wrap { max-width: 940px; margin: 0 auto; display: grid; gap: 20px; }
+header h1 { font-size: 1.75rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+code { font-family: var(--font-bit); font-size: 0.88em; }
+
+/* Schede */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab {
+  padding: 10px 14px; border: 0; background: none; cursor: pointer; white-space: nowrap;
+  font: 600 0.95rem var(--font-ui); color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--net); }
+.view { display: grid; gap: 20px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+h2 { font-size: 1rem; margin: 0 0 12px; }
+
+/* Controlli comuni */
+label { display: grid; gap: 6px; font-weight: 600; font-size: 0.85rem; }
+label small { font-weight: 400; color: var(--muted); }
+input[type=text], select {
+  font-family: var(--font-bit); font-size: 0.95rem; padding: 9px 11px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); width: 100%;
+}
+select { font-family: var(--font-ui); }
+input[type=text]:focus-visible, select:focus-visible, input[type=range]:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--net); outline-offset: 2px;
+}
+input.bad { border-color: var(--err); }
+.btn {
+  font: 600 0.9rem var(--font-ui); padding: 9px 16px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--net); background: var(--net); color: var(--on-accent);
+}
+.btn:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+.btn.ghost:hover { border-color: var(--net); filter: none; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Visualizzatore */
+#f { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; align-items: end; }
+@media (max-width: 620px) { #f { grid-template-columns: 1fr; } }
+.slider { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; font-size: 0.85rem; color: var(--muted); }
+.slider input { width: 100%; accent-color: var(--net); }
+.slider output { font-family: var(--font-bit); color: var(--fg); min-width: 3ch; text-align: right; }
+.examples { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--muted); }
+.examples button {
+  font-family: var(--font-bit); font-size: 0.78rem; padding: 5px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer;
+}
+.examples button:hover { border-color: var(--net); }
+.error { grid-column: 1 / -1; color: var(--err); font-size: 0.9rem; margin: 0; }
+
+.bits-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+th { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+th small { display: block; font-weight: 400; color: var(--muted); }
+td.dec { font-family: var(--font-bit); font-size: 0.85rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.bin { font-family: var(--font-bit); font-size: 0.92rem; white-space: nowrap; }
+.oct { display: inline-flex; }
+.dot { color: var(--muted); padding: 0 4px; }
+.b { display: inline-block; width: 1.15em; text-align: center; border-radius: 3px; }
+.b.n { color: var(--net); background: var(--net-soft); }
+.b.h { color: var(--host); background: var(--host-soft); }
+.b.zero { opacity: .55; }
+.b.cut { box-shadow: inset 2px 0 0 var(--fg); }
+tr.op td, tr.op th { border-bottom: 2px solid var(--fg); }
+tr.result th { color: var(--net); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.82rem; color: var(--muted); margin-top: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 20px; margin: 0; }
+dl div { min-width: 0; }
+dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+dd { margin: 2px 0 0; font-family: var(--font-bit); font-size: 0.95rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.result-panel.stale { opacity: 0.4; }
+.note { font-size: 0.85rem; color: var(--muted); margin: 14px 0 0; max-width: 65ch; }
+
+/* Esercizi */
+.problem-head { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; align-items: flex-start; }
+.problem-head > div { min-width: 0; }
+.eyebrow { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 4px; }
+.problem { font-family: var(--font-bit); font-size: 1.3rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.problem .pfx { color: var(--net); }
+.givens { display: grid; gap: 2px; margin: 8px 0 0; font-size: 0.9rem; }
+.givens span { font-family: var(--font-bit); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.controls label { min-width: 190px; }
+details.custom { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+details.custom summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; color: var(--net); }
+.custom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; align-items: end; }
+.custom-err { color: var(--err); font-size: 0.88rem; margin: 8px 0 0; }
+
+.qgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px 18px; }
+.qgroup {
+  grid-column: 1 / -1; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px;
+}
+.qgroup:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.q { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.q label { font-size: 0.86rem; }
+.q label .n { color: var(--net); font-family: var(--font-bit); margin-right: 4px; }
+.q.ok input, .q.ok select { border-color: var(--ok); background: var(--ok-soft); }
+.q.ko input, .q.ko select { border-color: var(--err); background: var(--err-soft); }
+.fb { font-size: 0.82rem; min-height: 1.25em; margin: 0; }
+.fb.ok { color: var(--ok); }
+.fb.ko { color: var(--err); }
+.fb .exp { font-family: var(--font-bit); color: var(--fg); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.score { font-weight: 600; }
+.score.all { color: var(--ok); }
+.session { font-size: 0.85rem; color: var(--muted); margin-left: auto; }
+
+.sol ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.sol h3 { font-size: 0.95rem; margin: 0 0 4px; }
+.sol p { margin: 4px 0; max-width: 72ch; }
+.sol pre {
+  font-family: var(--font-bit); font-size: 0.82rem; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 7px; padding: 10px 12px; margin: 6px 0; overflow-x: auto; line-height: 1.55;
+}
+.sol .res { font-family: var(--font-bit); font-weight: 600; color: var(--net); }
+@media (prefers-reduced-motion: no-preference) { .q input, .q select { transition: background-color .2s, border-color .2s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Visualizzatore bit di rete</h1>
+    <p>Guarda un indirizzo IPv4 bit per bit, oppure esercitati con indirizzi casuali sull'analisi IPv4 e sul subnetting e verifica le tue risposte.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sezioni">
+    <button class="tab" role="tab" id="tab-visualizzatore" aria-controls="visualizzatore" aria-selected="true">Visualizzatore</button>
+    <button class="tab" role="tab" id="tab-analisi" aria-controls="analisi" aria-selected="false">Esercizio: Analisi IPv4</button>
+    <button class="tab" role="tab" id="tab-subnetting" aria-controls="subnetting" aria-selected="false">Esercizio: Subnetting</button>
+  </nav>
+
+  <!-- ============ VISUALIZZATORE ============ -->
+  <div class="view" id="visualizzatore" role="tabpanel" aria-labelledby="tab-visualizzatore">
+    <section class="panel">
+      <form id="f" autocomplete="off">
+        <label for="ip">Indirizzo IP <small>es. 192.168.1.10</small>
+          <input type="text" id="ip" value="192.168.10.77" inputmode="decimal" spellcheck="false">
+        </label>
+        <label for="mask">Subnet mask <small>es. 255.255.255.0 oppure /24</small>
+          <input type="text" id="mask" value="/26" spellcheck="false">
+        </label>
+        <div class="slider">
+          <span>Prefisso</span>
+          <input type="range" id="pfx" min="0" max="32" value="26" aria-label="Lunghezza del prefisso">
+          <output id="pfxOut">/26</output>
+        </div>
+        <div class="examples">Esempi:
+          <button type="button" data-ip="10.20.30.40" data-m="/8">10.20.30.40 /8</button>
+          <button type="button" data-ip="172.16.45.200" data-m="255.255.240.0">172.16.45.200 /20</button>
+          <button type="button" data-ip="192.168.1.10" data-m="255.255.255.0">192.168.1.10 /24</button>
+          <button type="button" data-ip="192.168.10.77" data-m="/27">192.168.10.77 /27</button>
+        </div>
+        <p class="error" id="err" hidden></p>
+      </form>
+    </section>
+
+    <section class="panel result-panel">
+      <h2>I 32 bit</h2>
+      <div class="bits-scroll"><table><tbody id="rows"></tbody></table></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--net-soft);box-shadow:inset 0 0 0 1px var(--net)"></i>bit di rete (parte fissata dalla maschera)</span>
+        <span><i class="sw" style="background:var(--host-soft);box-shadow:inset 0 0 0 1px var(--host)"></i>bit di host</span>
+      </div>
+    </section>
+
+    <section class="panel result-panel">
+      <h2>Riepilogo della sottorete</h2>
+      <dl id="info"></dl>
+      <p class="note" id="note"></p>
+    </section>
+  </div>
+
+  <!-- ============ ESERCIZI (stessa struttura per le due modalità) ============ -->
+  <div class="view" id="analisi" role="tabpanel" aria-labelledby="tab-analisi" hidden></div>
+  <div class="view" id="subnetting" role="tabpanel" aria-labelledby="tab-subnetting" hidden></div>
+</div>
+
+<template id="tpl-ex">
+  <section class="panel">
+    <div class="problem-head">
+      <div>
+        <p class="eyebrow" data-r="eyebrow"></p>
+        <p class="problem" data-r="problem"></p>
+        <div class="givens" data-r="givens"></div>
+      </div>
+      <div class="controls">
+        <label>Livello
+          <select data-r="level"></select>
+        </label>
+        <button type="button" class="btn" data-r="new">Nuovo esercizio</button>
+      </div>
+    </div>
+    <details class="custom">
+      <summary>Usa un indirizzo tuo (ad esempio quello di un esercizio del libro)</summary>
+      <form class="custom-grid" data-r="customForm" autocomplete="off"></form>
+      <p class="custom-err" data-r="customErr" hidden></p>
+    </details>
+  </section>
+
+  <section class="panel">
+    <form data-r="answers" autocomplete="off" novalidate>
+      <div class="qgrid" data-r="questions"></div>
+      <div class="actions">
+        <button type="submit" class="btn">Verifica</button>
+        <button type="button" class="btn ghost" data-r="showSol">Mostra soluzione</button>
+        <button type="button" class="btn ghost" data-r="openViz">Apri nel visualizzatore</button>
+        <span class="score" data-r="score" aria-live="polite"></span>
+        <span class="session" data-r="session"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel sol" data-r="solPanel" hidden>
+    <h2>Soluzione passo passo</h2>
+    <ol data-r="sol"></ol>
+  </section>
+</template>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- Utilità sugli indirizzi ---------- */
+  function parseIP(s) {
+    const p = String(s).trim().split(".");
+    if (p.length !== 4) return null;
+    let n = 0;
+    for (const x of p) {
+      if (!/^\d{1,3}$/.test(x)) return null;
+      const v = Number(x);
+      if (v > 255) return null;
+      n = n * 256 + v;
+    }
+    return n;
+  }
+  const prefixToMask = (p) => (p === 0 ? 0 : (0xFFFFFFFF << (32 - p)) >>> 0);
+  const octets = (n) => [24, 16, 8, 0].map((s) => (n >>> s) & 255);
+  const toDotted = (n) => octets(n >>> 0).join(".");
+  const toBits = (n) => (n >>> 0).toString(2).padStart(32, "0");
+  const groupBits = (b) => b.match(/.{8}/g).join(".");
+  const bits8 = (v) => v.toString(2).padStart(8, "0");
+  const and = (a, b) => (a & b) >>> 0;
+  const fmt = (n) => n.toLocaleString("it-IT");
+  const ORD = ["primo", "secondo", "terzo", "quarto"];
+  const ORD_F = ["prima", "seconda", "terza", "quarta"];
+
+  // Restituisce il prefisso (0-32) oppure { err }
+  function parseMask(s) {
+    s = String(s).trim();
+    const c = s.match(/^\/?(\d{1,2})$/);
+    if (c) { const p = Number(c[1]); return p <= 32 ? p : { err: "Il prefisso deve essere compreso tra 0 e 32." }; }
+    const m = parseIP(s);
+    if (m === null) return { err: "Maschera non valida: usa la forma 255.255.255.0 oppure /24." };
+    const b = toBits(m);
+    if (/01/.test(b)) return { err: "Maschera non valida: gli 1 devono essere tutti consecutivi a sinistra (" + groupBits(b) + ")." };
+    return b.indexOf("0") === -1 ? 32 : b.indexOf("0");
+  }
+
+  /* ---------- Ambiti di indirizzo (come nella tabella degli esercizi) ---------- */
+  const SCOPES = {
+    "privato-a": { name: "Privato (Classe A)", rule: "inizia con 10. (blocco 10.0.0.0/8, RFC 1918)", min: 8, inet: false },
+    "privato-b": { name: "Privato (Classe B)", rule: "inizia con 172. e il secondo ottetto è tra 16 e 31 (blocco 172.16.0.0/12, RFC 1918)", min: 12, inet: false },
+    "privato-c": { name: "Privato (Classe C)", rule: "inizia con 192.168. (blocco 192.168.0.0/16, RFC 1918)", min: 16, inet: false },
+    "cgnat": { name: "Shared Address Space (CGNAT)", rule: "inizia con 100. e il secondo ottetto è tra 64 e 127 (blocco 100.64.0.0/10, RFC 6598)", min: 10, inet: false },
+    "loopback": { name: "Loopback", rule: "inizia con 127.", min: 8, inet: false },
+    "apipa": { name: "APIPA / Link-Local", rule: "inizia con 169.254. (blocco 169.254.0.0/16)", min: 16, inet: false },
+    "host-locale": { name: "Host su rete locale", rule: "il primo ottetto è 0", min: 8, inet: false },
+    "multicast": { name: "Multicast (Classe D)", rule: "il primo ottetto è tra 224 e 239", min: 4, inet: false },
+    "sperimentale": { name: "Sperimentale (Classe E)", rule: "il primo ottetto è tra 240 e 255", min: 4, inet: false },
+    "documentazione": { name: "Documentazione (TEST-NET)", rule: "inizia con 192.0.2., 198.51.100. oppure 203.0.113. (RFC 5737)", min: 24, inet: false },
+    "benchmarking": { name: "Benchmarking", rule: "inizia con 198. e il secondo ottetto è 18 o 19 (blocco 198.18.0.0/15)", min: 15, inet: false },
+    "riservato": { name: "Riservato IETF (192.0.0.0/24)", rule: "inizia con 192.0.0. (blocco riservato alle assegnazioni di protocollo IETF, RFC 6890)", min: 24, inet: false, noExercise: true },
+    "pubblico": { name: "Pubblico", rule: "non rientra in nessun blocco speciale o privato", min: 8, inet: true }
+  };
+  function scopeOf(ip) {
+    const [a, b, c] = octets(ip);
+    if (a === 10) return "privato-a";
+    if (a === 172 && b >= 16 && b <= 31) return "privato-b";
+    if (a === 192 && b === 168) return "privato-c";
+    if (a === 100 && b >= 64 && b <= 127) return "cgnat";
+    if (a === 127) return "loopback";
+    if (a === 169 && b === 254) return "apipa";
+    if (a === 0) return "host-locale";
+    if (a >= 224 && a <= 239) return "multicast";
+    if (a >= 240) return "sperimentale";
+    if ((a === 192 && b === 0 && c === 2) || (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)) return "documentazione";
+    if (a === 198 && (b === 18 || b === 19)) return "benchmarking";
+    if (a === 192 && b === 0 && c === 0) return "riservato";
+    return "pubblico";
+  }
+  // Altri blocchi a uso speciale IANA (6to4 relay, AS112, AMT): tecnicamente instradabili,
+  // ma esclusi dagli esercizi casuali per evitare ambiguità
+  function isOtherSpecial(ip) {
+    const [a, b, c] = octets(ip);
+    return a === 192 && ((b === 88 && c === 99) || (b === 31 && c === 196) || (b === 52 && c === 193) || (b === 175 && c === 48));
+  }
+  function classOf(ip) {
+    const a = ip >>> 24;
+    return a < 128 ? "A" : a < 192 ? "B" : a < 224 ? "C" : a < 240 ? "D" : "E";
+  }
+  const CLASS_INFO = {
+    A: "primo ottetto tra 0 e 127, maschera nativa /8",
+    B: "primo ottetto tra 128 e 191, maschera nativa /16",
+    C: "primo ottetto tra 192 e 223, maschera nativa /24",
+    D: "primo ottetto tra 224 e 239, multicast",
+    E: "primo ottetto tra 240 e 255, sperimentale"
+  };
+
+  /* ================= VISUALIZZATORE ================= */
+  const ipIn = $("ip"), maskIn = $("mask"), pfx = $("pfx"), pfxOut = $("pfxOut");
+
+  function binCell(n, p) {
+    const bits = toBits(n);
+    let html = "";
+    for (let o = 0; o < 4; o++) {
+      if (o) html += '<span class="dot">.</span>';
+      html += '<span class="oct">';
+      for (let i = o * 8; i < o * 8 + 8; i++) {
+        const cls = ["b", i < p ? "n" : "h"];
+        if (bits[i] === "0") cls.push("zero");
+        if (i === p && p > 0 && p < 32 && i % 8 !== 0) cls.push("cut");
+        html += '<span class="' + cls.join(" ") + '">' + bits[i] + "</span>";
+      }
+      html += "</span>";
+    }
+    return html;
+  }
+  function vrow(label, sub, n, p, cls) {
+    return '<tr class="' + (cls || "") + '"><th>' + label + (sub ? "<small>" + sub + "</small>" : "") +
+      '</th><td class="dec">' + toDotted(n) + '</td><td class="bin">' + binCell(n, p) + "</td></tr>";
+  }
+  function typeLabel(ip) {
+    if (ip === 0) return "Non specificato";
+    if (ip === 0xFFFFFFFF) return "Broadcast limitato";
+    return SCOPES[scopeOf(ip)].name;
+  }
+
+  // Con un input non valido i risultati precedenti restano, ma sbiaditi e segnalati
+  function setStale(on) {
+    document.querySelectorAll("#visualizzatore .result-panel").forEach((el) => el.classList.toggle("stale", on));
+  }
+  function showVizError(msg) {
+    const e = $("err");
+    e.textContent = msg + " I risultati sotto si riferiscono all'ultimo valore valido.";
+    e.hidden = false;
+    setStale(true);
+  }
+
+  function render(p) {
+    const ip = parseIP(ipIn.value);
+    const err = $("err");
+    ipIn.classList.toggle("bad", ip === null);
+    if (ip === null) { showVizError("Indirizzo IP non valido: servono 4 numeri da 0 a 255 separati da punti."); return; }
+    err.hidden = true;
+    setStale(false);
+
+    const mask = prefixToMask(p), wild = (~mask) >>> 0;
+    const net = and(ip, mask), bc = (net | wild) >>> 0;
+
+    let bcRow = vrow("Broadcast", "rete OR wildcard", bc, p);
+    if (p === 31) bcRow = vrow("Secondo indirizzo", "con /31 non c'è broadcast", bc, p);
+    if (p === 32) bcRow = "";
+    $("rows").innerHTML =
+      vrow("Indirizzo IP", "", ip, p) +
+      vrow("Subnet mask", "/" + p, mask, p, "op") +
+      vrow("Indirizzo di rete", p === 32 ? "coincide con l'IP" : "IP AND maschera", net, p, "result") +
+      bcRow +
+      vrow("Wildcard", "NOT maschera", wild, p);
+
+    const total = 2 ** (32 - p);
+    let usable, first, last;
+    if (p === 32) { usable = 1; first = last = ip; }
+    else if (p === 31) { usable = 2; first = net; last = bc; }
+    else { usable = total - 2; first = net + 1; last = bc - 1; }
+
+    const items = [
+      ["Notazione CIDR", toDotted(net) + "/" + p],
+      ["Bit rete / bit host", p + " / " + (32 - p)],
+      ["Indirizzi totali", "2^" + (32 - p) + " = " + fmt(total)],
+      [p >= 31 ? "Indirizzi utilizzabili" : "Host utilizzabili", fmt(usable)],
+      [p >= 31 ? "Primo indirizzo" : "Primo host", toDotted(first)],
+      [p >= 31 ? "Ultimo indirizzo" : "Ultimo host", toDotted(last)],
+      ["Classe (storica)", classOf(ip)],
+      ["Tipo di indirizzo", typeLabel(ip)],
+      ["IP in esadecimale", "0x" + ip.toString(16).toUpperCase().padStart(8, "0")]
+    ];
+    $("info").innerHTML = items.map(([k, v]) => "<div><dt>" + k + "</dt><dd>" + v + "</dd></div>").join("");
+
+    let note = "Host utilizzabili = 2^(bit host) − 2: si escludono l'indirizzo di rete (host tutti a 0) e il broadcast (host tutti a 1).";
+    if (p === 31) note = "Con /31 (RFC 3021, collegamenti punto-punto) entrambi gli indirizzi sono assegnabili: non c'è broadcast.";
+    if (p === 32) note = "Con /32 la \"rete\" contiene un solo indirizzo: si usa per identificare un singolo host, ad esempio in una rotta.";
+    $("note").textContent = note;
+  }
+  function setPrefix(p, fromSlider) {
+    pfx.value = p; pfxOut.textContent = "/" + p;
+    if (fromSlider) { maskIn.value = toDotted(prefixToMask(p)); maskIn.classList.remove("bad"); }
+    render(p);
+  }
+  function fromMaskField() {
+    const r = parseMask(maskIn.value);
+    if (typeof r === "object") {
+      maskIn.classList.add("bad");
+      showVizError(r.err);
+      return;
+    }
+    maskIn.classList.remove("bad");
+    setPrefix(r, false);
+  }
+  ipIn.addEventListener("input", () => render(Number(pfx.value)));
+  maskIn.addEventListener("input", fromMaskField);
+  pfx.addEventListener("input", () => setPrefix(Number(pfx.value), true));
+  $("f").addEventListener("submit", (e) => e.preventDefault());
+  document.querySelectorAll(".examples button").forEach((b) =>
+    b.addEventListener("click", () => { ipIn.value = b.dataset.ip; maskIn.value = b.dataset.m; fromMaskField(); }));
+  fromMaskField();
+
+  function openInViz(ip, p) {
+    ipIn.value = toDotted(ip);
+    maskIn.value = toDotted(prefixToMask(p));
+    fromMaskField();
+    selectTab("visualizzatore", true);
+  }
+
+  /* ================= GENERAZIONE CASUALE ================= */
+  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  function weighted(obj) {
+    let t = Math.random() * Object.values(obj).reduce((a, b) => a + b, 0);
+    for (const [k, w] of Object.entries(obj)) { if ((t -= w) < 0) return k; }
+    return Object.keys(obj)[0];
+  }
+  const mk = (a, b, c, d) => a * 16777216 + b * 65536 + c * 256 + d;
+  function genIP(scope) {
+    const r = () => rnd(0, 255);
+    switch (scope) {
+      case "privato-a": return mk(10, r(), r(), r());
+      case "privato-b": return mk(172, rnd(16, 31), r(), r());
+      case "privato-c": return mk(192, 168, r(), r());
+      case "cgnat": return mk(100, rnd(64, 127), r(), r());
+      case "apipa": return mk(169, 254, r(), r());
+      case "documentazione": { const t = pick([[192, 0, 2], [198, 51, 100], [203, 0, 113]]); return mk(t[0], t[1], t[2], r()); }
+      case "benchmarking": return mk(198, rnd(18, 19), r(), r());
+      default: { let ip; do { ip = mk(rnd(1, 223), r(), r(), r()); } while (scopeOf(ip) !== "pubblico" || isOtherSpecial(ip)); return ip; }
+    }
+  }
+  // IP che non coincide con l'indirizzo di rete né con il broadcast della sottorete /p
+  function genHostIP(scope, p) {
+    for (;;) {
+      const ip = genIP(scope), m = prefixToMask(p), net = and(ip, m), bc = (net | (~m >>> 0)) >>> 0;
+      if (ip !== net && ip !== bc) return ip;
+    }
+  }
+  function genAnalisi(level) {
+    const scope = weighted({ "privato-a": 17, "privato-b": 17, "privato-c": 20, "pubblico": 30, "cgnat": 5, "apipa": 4, "documentazione": 4, "benchmarking": 3 });
+    const min = SCOPES[scope].min;
+    let p;
+    if (level === "base") p = pick([8, 16, 24].filter((x) => x >= min));
+    else p = Math.random() < 0.75 ? rnd(Math.max(min, 16), 30) : rnd(min, Math.max(min, 15));
+    return { ip: genHostIP(scope, p), p };
+  }
+  function genSubnetting(level) {
+    const scope = weighted({ "privato-a": 25, "privato-b": 30, "privato-c": 35, "pubblico": 10 });
+    const min = SCOPES[scope].min;
+    const octetMasks = [8, 16, 24].filter((x) => x >= min);
+    let p1, s;
+    if (level === "base") { p1 = pick(octetMasks); s = rnd(1, Math.min(8, 30 - p1)); }
+    else {
+      p1 = Math.random() < 0.6 ? rnd(Math.max(min, 16), 28) : pick(octetMasks);
+      s = rnd(1, Math.min(10, 30 - p1));
+    }
+    const p2 = p1 + s;
+    return { ip: genHostIP(scope, p2), p1, p2 };
+  }
+
+  /* ================= CONTROLLO DELLE RISPOSTE ================= */
+  const cleanNum = (s) => String(s).replace(/[\s.'’]/g, "");
+  // Ogni checker restituisce { ok, msg? }
+  const CHECK = {
+    num(v, exp, f) {
+      const c = cleanNum(v);
+      if (!/^\d+$/.test(c)) return { ok: false, msg: "Scrivi un numero intero." };
+      const n = Number(c);
+      if (n === exp) return { ok: true };
+      return { ok: false, msg: (f.hint && f.hint(n)) || "Non è corretto." };
+    },
+    ip(v, exp, f) {
+      let s = String(v).trim(), sfx = null;
+      const m = s.match(/^(.*?)\s*\/\s*(\d{1,2})$/);
+      if (m) { s = m[1]; sfx = Number(m[2]); }
+      const n = parseIP(s);
+      if (n === null) return { ok: false, msg: "Scrivi un indirizzo nella forma a.b.c.d (numeri da 0 a 255)." };
+      if (n !== exp) return { ok: false, msg: (f.hint && f.hint(n)) || "Non è corretto." };
+      if (sfx !== null && f.prefix !== undefined && sfx !== f.prefix) return { ok: false, msg: "L'indirizzo è giusto, ma il prefisso indicato non lo è." };
+      return { ok: true };
+    },
+    mask(v, exp) {
+      const s = String(v).trim();
+      if (/^\/?\d{1,2}$/.test(s)) return { ok: false, msg: "Scrivila in decimale puntato, ad esempio 255.255.255.0." };
+      const r = parseMask(s);
+      if (typeof r === "object") return { ok: false, msg: r.err };
+      return r === exp ? { ok: true } : { ok: false, msg: "Non è corretta: conta i bit a 1 indicati dal prefisso." };
+    },
+    bin(v, exp) {
+      const c = String(v).replace(/[\s.]/g, "");
+      if (!/^[01]+$/.test(c)) return { ok: false, msg: "Usa solo 0 e 1 (i punti tra gli ottetti sono facoltativi)." };
+      if (c.length !== 32) return { ok: false, msg: "Servono 32 bit: ne hai scritti " + c.length + "." };
+      return c === exp ? { ok: true } : { ok: false, msg: "Non è corretta." };
+    },
+    select(v, exp) {
+      if (!v) return { ok: false, msg: "Scegli una risposta." };
+      return v === exp ? { ok: true } : { ok: false, msg: "Non è corretto." };
+    }
+  };
+  function displayExpected(f) {
+    if (f.type === "ip") return toDotted(f.exp) + (f.showPrefix ? "/" + f.prefix : "");
+    if (f.type === "mask") return toDotted(prefixToMask(f.exp));
+    if (f.type === "bin") return groupBits(f.exp);
+    if (f.type === "num") return fmt(f.exp);
+    if (f.type === "select") return f.options.find((o) => o[0] === f.exp)[1];
+    return String(f.exp);
+  }
+
+  /* ================= SPIEGAZIONI ================= */
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  function powersOf(v) {
+    const out = [];
+    for (let b = 128; b >= 1; b >>= 1) if (v & b) out.push(b);
+    return out.length ? out.join(" + ") : "0";
+  }
+  function andPre(ipOct, maskOct, k, maskName) {
+    const r = ipOct & maskOct;
+    return "<pre>" + esc(
+      bits8(ipOct) + "  (" + ORD[k] + " ottetto IP: ." + ipOct + ")\n   AND\n" +
+      bits8(maskOct) + "  (" + ORD[k] + " ottetto " + maskName + ": ." + maskOct + ")\n" +
+      "--------\n" + bits8(r) + "  (risultato: ." + r + ")") + "</pre>";
+  }
+  // Paragrafi per indirizzo di rete e broadcast con entrambi i metodi
+  function netBcSteps(ip, p, maskName) {
+    const m = prefixToMask(p), net = and(ip, m), bc = (net | (~m >>> 0)) >>> 0;
+    const io = octets(ip), mo = octets(m), no = octets(net), bo = octets(bc);
+    const k = p % 8 === 0 ? -1 : Math.floor(p / 8);
+    let netHtml, bcHtml;
+    if (k === -1) {
+      const kept = p / 8;
+      netHtml = "<p>La maschera /" + p + " è a ottetto intero: " +
+        (kept ? "i primi " + kept + " ottetti (maschera 255) restano uguali all'IP" : "nessun ottetto resta uguale") +
+        (kept < 4 ? ", gli altri (maschera 0) diventano 0." : ".") + "</p>";
+      bcHtml = "<p>Si portano a 1 tutti i bit host: gli ottetti con maschera 0 diventano 255.</p>";
+    } else {
+      const ms = mo[k], salto = 256 - ms, lo = no[k], hi = lo + salto;
+      const mult = [lo - salto, lo, hi].filter((x) => x >= 0 && x <= 256);
+      const left = k ? "Gli ottetti a sinistra restano uguali (AND con 255)" : "";
+      const right = k < 3 ? (left ? ", quelli a destra diventano 0" : "Gli ottetti a destra diventano 0") : "";
+      netHtml =
+        "<p><b>Metodo 1, AND bit a bit.</b> L'ottetto interessante è il " + ORD[k] + " (maschera " + ms + "). " + left + right + (left || right ? "." : "") + "</p>" +
+        andPre(io[k], ms, k, maskName) +
+        "<p><b>Metodo 2, salto.</b> 256 − " + ms + " = <b>" + salto + "</b>. Multipli: …, " + mult.join(", ") + ", … Il valore " + io[k] + " cade tra " + lo + " e " + hi + ", quindi nel " + ORD[k] + " ottetto si mette " + lo + ".</p>";
+      bcHtml =
+        "<p><b>Metodo 1, bit host a 1.</b> Nel " + ORD[k] + " ottetto <code>" + bits8(lo) + "</code> diventa <code>" + bits8(bo[k]) + "</code> (" + powersOf(bo[k]) + " = " + bo[k] + ")" +
+        (k < 3 ? "; gli ottetti a destra diventano 255." : ".") + "</p>" +
+        "<p><b>Metodo 2, salto.</b> La sottorete successiva inizia da " + hi + ", quindi si mette " + hi + " − 1 = " + bo[k] + ".</p>";
+    }
+    return { net, bc, netHtml: netHtml + '<p>Risultato: <span class="res">' + toDotted(net) + "</span></p>", bcHtml: bcHtml + '<p>Risultato: <span class="res">' + toDotted(bc) + "</span></p>" };
+  }
+  function maskStep(p) {
+    const m = prefixToMask(p), k = p % 8 === 0 ? -1 : Math.floor(p / 8);
+    return "<p>Il prefisso /" + p + " indica " + p + " bit a 1 (rete) e " + (32 - p) + " bit a 0 (host).</p>" +
+      "<pre>" + groupBits(toBits(m)) + "</pre>" +
+      (k >= 0 ? "<p>Il " + ORD[k] + " ottetto vale " + powersOf(octets(m)[k]) + " = " + octets(m)[k] + ".</p>" : "") +
+      '<p>Risultato: <span class="res">' + toDotted(m) + "</span></p>";
+  }
+  const li = (title, body) => "<li><h3>" + title + "</h3>" + body + "</li>";
+
+  /* ================= DEFINIZIONE DEGLI ESERCIZI ================= */
+  const SCOPE_OPTS = [["", "Scegli…"]].concat(Object.entries(SCOPES).filter(([, v]) => !v.noExercise).map(([k, v]) => [k, v.name]));
+  const CLASS_OPTS = [["", "Scegli…"], ["A", "Classe A"], ["B", "Classe B"], ["C", "Classe C"], ["D", "Classe D"], ["E", "Classe E"]];
+
+  const MODES = {
+    analisi: {
+      eyebrow: "Analisi IPv4",
+      levels: [["base", "Base: maschere /8, /16, /24"], ["avanzato", "Avanzato: qualsiasi maschera"]],
+      generate: genAnalisi,
+      problemHtml: (q) => toDotted(q.ip) + '<span class="pfx">/' + q.p + "</span>",
+      givensHtml: () => "<div>Rispondi ai 5 punti: scopo, subnet mask, host disponibili, indirizzo di rete, broadcast.</div>",
+      vizPrefix: (q) => q.p,
+      customFields: [["ip", "Indirizzo IP", "es. 192.168.10.133"], ["m", "Maschera", "es. /27 o 255.255.255.224"]],
+      fromCustom(v) {
+        const ip = parseIP(v.ip); if (ip === null) return { err: "Indirizzo IP non valido." };
+        const p = parseMask(v.m); if (typeof p === "object") return { err: p.err };
+        if (p < 1 || p > 30) return { err: "Per questo esercizio usa una maschera tra /1 e /30." };
+        if (SCOPES[scopeOf(ip)].noExercise) return { err: "Questo indirizzo appartiene a un blocco riservato che non è nella tabella degli ambiti: scegline un altro." };
+        return { ip, p };
+      },
+      fields(q) {
+        const m = prefixToMask(q.p), net = and(q.ip, m), bc = (net | (~m >>> 0)) >>> 0, h = 32 - q.p;
+        return [
+          { group: "1. Identificare lo scopo" },
+          { id: "classe", n: "1a", label: "Classe (storica)", type: "select", options: CLASS_OPTS, exp: classOf(q.ip) },
+          { id: "ambito", n: "1b", label: "Ambito di rete", type: "select", options: SCOPE_OPTS, exp: scopeOf(q.ip) },
+          { group: "2. Identificare la subnet mask" },
+          { id: "maskdec", n: "2a", label: "Subnet mask in decimale puntato", ph: "es. 255.255.255.0", type: "mask", exp: q.p },
+          { id: "maskbin", n: "2b", label: "Subnet mask in binario", ph: "32 bit, es. 11111111.11111111.…", type: "bin", exp: toBits(m) },
+          { group: "3–5. Host e indirizzi" },
+          { id: "hosts", n: "3", label: "Numero di host disponibili", type: "num", exp: 2 ** h - 2,
+            hint: (n) => n === 2 ** h ? "Hai contato tutti gli indirizzi: togli rete e broadcast (2^h − 2)." : null },
+          { id: "rete", n: "4", label: "Indirizzo di rete", ph: "a.b.c.d", type: "ip", exp: net, prefix: q.p,
+            hint: (n) => n === net + 1 ? "Questo è il primo host: la rete ha tutti i bit host a 0." : null },
+          { id: "bc", n: "5", label: "Indirizzo di broadcast", ph: "a.b.c.d", type: "ip", exp: bc, prefix: q.p,
+            hint: (n) => n === bc - 1 ? "Questo è l'ultimo host: il broadcast ha tutti i bit host a 1." : null }
+        ];
+      },
+      solution(q) {
+        const sc = SCOPES[scopeOf(q.ip)], cl = classOf(q.ip), h = 32 - q.p;
+        const nb = netBcSteps(q.ip, q.p, "maschera");
+        return [
+          li("1. Identificare lo scopo",
+            "<p><b>Classe (storica):</b> " + cl + " (" + CLASS_INFO[cl] + ").</p>" +
+            "<p><b>Ambito:</b> " + sc.name + ", perché " + sc.rule + ". Instradabile su Internet: " + (sc.inet ? "sì" : "no") + ".</p>"),
+          li("2. Identificare la subnet mask", maskStep(q.p)),
+          li("3. Numero di host disponibili",
+            "<p>Bit host h = 32 − " + q.p + " = " + h + ". Formula 2^h − 2 = " + fmt(2 ** h) + " − 2 = <span class=\"res\">" + fmt(2 ** h - 2) + "</span>.</p>" +
+            "<p>Si tolgono 2 indirizzi: l'indirizzo di rete e il broadcast.</p>"),
+          li("4. Indirizzo di rete", nb.netHtml),
+          li("5. Indirizzo di broadcast", nb.bcHtml)
+        ].join("");
+      }
+    },
+
+    subnetting: {
+      eyebrow: "Subnetting",
+      levels: [["base", "Base: rete madre /8, /16, /24"], ["avanzato", "Avanzato: rete madre qualsiasi"]],
+      generate: genSubnetting,
+      problemHtml: (q) => toDotted(q.ip),
+      givensHtml: (q) =>
+        "<div>Maschera originale: <span>" + toDotted(prefixToMask(q.p1)) + "</span> (/" + q.p1 + ")</div>" +
+        "<div>Maschera nuova: <span>" + toDotted(prefixToMask(q.p2)) + "</span> (/" + q.p2 + ")</div>",
+      vizPrefix: (q) => q.p2,
+      customFields: [["ip", "Indirizzo IP", "es. 172.16.68.230"], ["m1", "Maschera originale", "es. /16"], ["m2", "Maschera nuova", "es. /20"]],
+      fromCustom(v) {
+        const ip = parseIP(v.ip); if (ip === null) return { err: "Indirizzo IP non valido." };
+        const p1 = parseMask(v.m1); if (typeof p1 === "object") return { err: "Maschera originale: " + p1.err };
+        const p2 = parseMask(v.m2); if (typeof p2 === "object") return { err: "Maschera nuova: " + p2.err };
+        if (p2 <= p1) return { err: "La maschera nuova deve essere più lunga di quella originale." };
+        if (p2 > 30) return { err: "Per questo esercizio usa una maschera nuova fino a /30." };
+        return { ip, p1, p2 };
+      },
+      fields(q) {
+        const m1 = prefixToMask(q.p1), m2 = prefixToMask(q.p2);
+        const madre = and(q.ip, m1), net = and(q.ip, m2), bc = (net | (~m2 >>> 0)) >>> 0;
+        const s = q.p2 - q.p1, h = 32 - q.p2, idx = ((net - madre) / 2 ** h) + 1;
+        return [
+          { group: "Passo preliminare" },
+          { id: "madre", n: "0", label: "Rete madre (con la maschera originale)", ph: "a.b.c.d", type: "ip", exp: madre, prefix: q.p1, showPrefix: true,
+            hint: (n) => n === net ? "Hai usato la maschera nuova: per la rete madre serve quella originale." : null },
+          { group: "Analisi dei bit e conteggi" },
+          { id: "sbits", n: "1", label: "Bit di sottorete", type: "num", exp: s,
+            hint: (n) => n === q.p2 ? "Questi sono i bit di rete della maschera nuova: sottrai quelli della maschera originale." : null },
+          { id: "subnets", n: "2", label: "Sottoreti create", type: "num", exp: 2 ** s,
+            hint: (n) => n === 2 ** s - 2 ? "Per le sottoreti la formula è 2^s, senza togliere 2." : null },
+          { id: "hbits", n: "3", label: "Bit di host", type: "num", exp: h,
+            hint: (n) => n === 32 - q.p1 ? "Usa la maschera nuova: 32 − bit della maschera nuova." : null },
+          { id: "hosts", n: "4", label: "Host per sottorete", type: "num", exp: 2 ** h - 2,
+            hint: (n) => n === 2 ** h ? "Hai contato tutti gli indirizzi: togli rete e broadcast (2^h − 2)." : null },
+          { group: "Indirizzi della sottorete dell'IP" },
+          { id: "rete", n: "5", label: "Indirizzo di rete", ph: "a.b.c.d", type: "ip", exp: net, prefix: q.p2,
+            hint: (n) => n === madre ? "Questa è la rete madre: applica la maschera nuova." : null },
+          { id: "primo", n: "6", label: "Primo host", ph: "a.b.c.d", type: "ip", exp: net + 1,
+            hint: (n) => n === net ? "Questo è l'indirizzo di rete: il primo host è rete + 1." : null },
+          { id: "bc", n: "7", label: "Indirizzo di broadcast", ph: "a.b.c.d", type: "ip", exp: bc, prefix: q.p2,
+            hint: (n) => n === bc - 1 ? "Questo è l'ultimo host: il broadcast ha tutti i bit host a 1." : null },
+          { id: "ultimo", n: "8", label: "Ultimo host", ph: "a.b.c.d", type: "ip", exp: bc - 1,
+            hint: (n) => n === bc ? "Questo è il broadcast: l'ultimo host è broadcast − 1." : null },
+          { group: "Domanda in più" },
+          { id: "ordine", n: "+", label: "In quale sottorete cade l'IP? (1 = la prima)", type: "num", exp: idx,
+            hint: (n) => n === idx - 1 ? "Si conta partendo da 1: la sottorete che inizia come la rete madre è la prima." : null }
+        ];
+      },
+      solution(q) {
+        const m1 = prefixToMask(q.p1);
+        const madre = and(q.ip, m1), madreBc = (madre | (~m1 >>> 0)) >>> 0;
+        const s = q.p2 - q.p1, h = 32 - q.p2;
+        const pre = netBcSteps(q.ip, q.p1, "maschera originale");
+        const nb = netBcSteps(q.ip, q.p2, "maschera nuova");
+        const idx = ((nb.net - madre) / 2 ** h) + 1;
+        // elenco delle prime sottoreti
+        const shown = Math.min(2 ** s, 4), list = [];
+        for (let i = 0; i < shown; i++) list.push(toDotted(madre + i * 2 ** h));
+        let listTxt = list.join(" · ");
+        if (2 ** s > shown) listTxt += " · … · " + toDotted(madre + (2 ** s - 1) * 2 ** h);
+        return [
+          li("Passo preliminare: la rete madre",
+            "<p>Si applica all'IP la maschera <b>originale</b> /" + q.p1 + ".</p>" + pre.netHtml.replace(/<p>Risultato:.*<\/p>$/, "") +
+            '<p>Rete madre: <span class="res">' + toDotted(madre) + "/" + q.p1 + "</span>, da " + toDotted(madre) + " a " + toDotted(madreBc) + ". Le nuove sottoreti stanno tutte qui dentro.</p>"),
+          li("Confronto tra le due maschere",
+            "<pre>" + groupBits(toBits(m1)) + "  (/" + q.p1 + ")\n" + groupBits(toBits(prefixToMask(q.p2))) + "  (/" + q.p2 + ")</pre>"),
+          li("1. Bit di sottorete", "<p>" + q.p2 + " − " + q.p1 + ' = <span class="res">' + s + "</span> bit presi in prestito dalla parte host.</p>"),
+          li("2. Sottoreti create", "<p>2^s = 2^" + s + ' = <span class="res">' + fmt(2 ** s) + "</span> sottoreti.</p>" +
+            "<p>Le sottoreti: " + listTxt + ".</p>"),
+          li("3. Bit di host", "<p>32 − " + q.p2 + ' = <span class="res">' + h + "</span> bit.</p>"),
+          li("4. Host per sottorete", "<p>2^h − 2 = " + fmt(2 ** h) + ' − 2 = <span class="res">' + fmt(2 ** h - 2) + "</span> host utilizzabili.</p>"),
+          li("5. Indirizzo di rete dell'IP", "<p>Si usa la maschera <b>nuova</b> /" + q.p2 + ".</p>" + nb.netHtml +
+            "<p>L'IP cade nella sottorete numero <b>" + fmt(idx) + "</b> (" + toDotted(nb.net) + " − " + toDotted(madre) + ", diviso " + fmt(2 ** h) + " indirizzi per sottorete, più 1).</p>"),
+          li("6. Primo host", "<p>Rete + 1: <span class=\"res\">" + toDotted(nb.net + 1) + "</span></p>"),
+          li("7. Indirizzo di broadcast", nb.bcHtml),
+          li("8. Ultimo host", "<p>Broadcast − 1: <span class=\"res\">" + toDotted(nb.bc - 1) + "</span></p>")
+        ].join("");
+      }
+    }
+  };
+
+  /* ================= MOTORE DELLE SCHEDE DI ESERCIZIO ================= */
+  function buildExercise(key) {
+    const M = MODES[key];
+    const root = $(key);
+    root.appendChild($("tpl-ex").content.cloneNode(true));
+    const R = {};
+    root.querySelectorAll("[data-r]").forEach((el) => { R[el.dataset.r] = el; });
+
+    R.eyebrow.textContent = M.eyebrow;
+    R.level.id = key + "-level";
+    R.level.innerHTML = M.levels.map(([v, t]) => '<option value="' + v + '">' + t + "</option>").join("");
+    R.customForm.innerHTML = M.customFields.map(([id, lab, ph]) =>
+      '<label for="' + key + "-c-" + id + '">' + lab + '<input type="text" id="' + key + "-c-" + id + '" name="' + id + '" placeholder="' + ph + '" spellcheck="false"></label>').join("") +
+      '<button type="submit" class="btn ghost">Usa questo esercizio</button>';
+
+    let q = null, fields = [], solved = false, verified = false;
+    const session = { tried: 0, solved: 0 };
+
+    function updateSession() {
+      R.session.textContent = session.tried ? "Sessione: " + session.solved + " su " + session.tried + " esercizi risolti senza errori" : "";
+    }
+
+    function load(problem) {
+      q = problem; solved = false; verified = false;
+      R.problem.innerHTML = M.problemHtml(q);
+      R.givens.innerHTML = M.givensHtml(q);
+      fields = M.fields(q);
+      R.questions.innerHTML = fields.map((f) => {
+        if (f.group) return '<div class="qgroup">' + f.group + "</div>";
+        const id = key + "-" + f.id;
+        const input = f.type === "select"
+          ? '<select id="' + id + '">' + f.options.map(([v, t]) => '<option value="' + v + '">' + t + "</option>").join("") + "</select>"
+          : '<input type="text" id="' + id + '" placeholder="' + (f.ph || "") + '" spellcheck="false" autocapitalize="off"' + (f.type === "num" ? ' inputmode="numeric"' : "") + ">";
+        return '<div class="q" data-f="' + f.id + '"><label for="' + id + '"><span><span class="n">' + f.n + "</span>" + f.label + "</span>" + input + '</label><p class="fb" aria-live="polite"></p></div>';
+      }).join("");
+      R.score.textContent = ""; R.score.className = "score";
+      R.solPanel.hidden = true; R.sol.innerHTML = "";
+    }
+
+    function check(reveal) {
+      let right = 0, total = 0;
+      fields.forEach((f) => {
+        if (f.group) return;
+        total++;
+        const box = R.questions.querySelector('[data-f="' + f.id + '"]');
+        const el = box.querySelector("input, select"), fb = box.querySelector(".fb");
+        const val = el.value;
+        let res;
+        if (!String(val).trim()) res = { ok: false, msg: "Manca la risposta." };
+        else res = CHECK[f.type](val, f.exp, f);
+        if (res.ok) right++;
+        box.classList.toggle("ok", res.ok);
+        box.classList.toggle("ko", !res.ok);
+        fb.className = "fb " + (res.ok ? "ok" : "ko");
+        fb.innerHTML = res.ok ? "Corretto" : esc(res.msg) + (reveal ? ' Soluzione: <span class="exp">' + esc(displayExpected(f)) + "</span>" : "");
+      });
+      return { right, total };
+    }
+
+    R.answers.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const { right, total } = check(!R.solPanel.hidden);
+      if (!verified) { verified = true; session.tried++; }
+      if (right === total && R.solPanel.hidden && !solved) { solved = true; session.solved++; }
+      R.score.textContent = right === total ? "Tutto corretto: " + right + " su " + total + "." : right + " su " + total + " corrette. Correggi quelle in rosso e verifica di nuovo.";
+      R.score.className = "score" + (right === total ? " all" : "");
+      updateSession();
+    });
+    R.showSol.addEventListener("click", () => {
+      if (!verified) { verified = true; session.tried++; updateSession(); }
+      R.sol.innerHTML = M.solution(q);
+      R.solPanel.hidden = false;
+      const { right, total } = check(true);
+      R.score.textContent = right + " su " + total + " corrette.";
+      R.score.className = "score";
+      R.solPanel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    });
+    R.openViz.addEventListener("click", () => openInViz(q.ip, M.vizPrefix(q)));
+    R.new.addEventListener("click", () => load(M.generate(R.level.value)));
+    R.level.addEventListener("change", () => {
+      try { localStorage.setItem("bitrete-level-" + key, R.level.value); } catch (e) {}
+      load(M.generate(R.level.value));
+    });
+    R.customForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = {};
+      M.customFields.forEach(([id]) => { v[id] = R.customForm.elements[id].value; });
+      const res = M.fromCustom(v);
+      if (res.err) { R.customErr.textContent = res.err; R.customErr.hidden = false; return; }
+      R.customErr.hidden = true;
+      load(res);
+    });
+
+    try { const lv = localStorage.getItem("bitrete-level-" + key); if (lv && M.levels.some((l) => l[0] === lv)) R.level.value = lv; } catch (e) {}
+    load(M.generate(R.level.value));
+  }
+
+  buildExercise("analisi");
+  buildExercise("subnetting");
+
+  /* ================= SCHEDE ================= */
+  const TABS = ["visualizzatore", "analisi", "subnetting"];
+  function selectTab(name, focus) {
+    TABS.forEach((t) => {
+      const on = t === name;
+      $("tab-" + t).setAttribute("aria-selected", on);
+      $("tab-" + t).tabIndex = on ? 0 : -1;
+      $(t).hidden = !on;
+    });
+    try { localStorage.setItem("bitrete-tab", name); } catch (e) {}
+    if (focus) $("tab-" + name).focus();
+  }
+  TABS.forEach((t, i) => {
+    const b = $("tab-" + t);
+    b.addEventListener("click", () => selectTab(t));
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        selectTab(TABS[(i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length], true);
+      }
+    });
+  });
+  let start = "visualizzatore";
+  const h = location.hash.replace("#", "");
+  if (TABS.includes(h)) start = h;
+  else { try { const s = localStorage.getItem("bitrete-tab"); if (TABS.includes(s)) start = s; } catch (e) {} }
+  selectTab(start);
+
+  // Esposto solo per i test automatici
+  window.__bitrete = { MODES, CHECK, parseIP, toDotted, scopeOf, classOf, genAnalisi, genSubnetting };
+})();
+</script>
+</body>
+</html>
