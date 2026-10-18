@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Griglia di 9 bit: i primi 6 di rete (azzurro), gli ultimi 3 di host (arancione) -->
+  <rect width="32" height="32" rx="6" fill="#16202b"/>
+  <g fill="#4fc1de">
+    <rect x="2" y="2" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="2" width="8" height="8" rx="1.5"/>
+    <rect x="22" y="2" width="8" height="8" rx="1.5"/>
+    <rect x="2" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="22" y="12" width="8" height="8" rx="1.5"/>
+  </g>
+  <g fill="#f0a060">
+    <rect x="2" y="22" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="22" width="8" height="8" rx="1.5"/>
+    <rect x="22" y="22" width="8" height="8" rx="1.5"/>
+  </g>
+</svg>
